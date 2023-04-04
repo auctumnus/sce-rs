@@ -1,0 +1,19 @@
+[package]
+name = "sce-rs"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "sce"
+path = "src/main.rs"
+
+[lib]
+name = "sce"
+path = "lib/main.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ariadne = "0.2.0"
+chumsky = "1.0.0-alpha.3"
+strum = { version = "0.24.1", features = ["strum_macros", "derive"] }
