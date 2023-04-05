@@ -1,10 +1,23 @@
 use chumsky::{
     prelude::*,
-    text::{digits, inline_whitespace, newline},
+    text::{digits, inline_whitespace, newline, whitespace},
 };
 use std::str::FromStr;
+use strum::EnumString;
 
-use crate::common::Wildcard;
+//use crate::common::Wildcard;
+
+#[derive(Clone, Debug, EnumString)]
+pub enum Wildcard {
+    #[strum(serialize = "*?")]
+    NonGreedy,
+    #[strum(serialize = "*")]
+    Greedy,
+    #[strum(serialize = "**?")]
+    NonGreedyExtended,
+    #[strum(serialize = "**")]
+    GreedyExtended,
+}
 
 const CONTROL_CHARACTERS: &str = "[]{}<>()@!%^_, *?\\+-^/=";
 
@@ -34,15 +47,30 @@ fn escape<'a>() -> impl Parser<'a, &'a str, char, E<'a>> {
     just('\\').ignore_then(one_of(CONTROL_CHARACTERS))
 }
 
+#[cfg(test)]
+#[test]
+fn escape_test() {
+    assert_eq!(
+        escape().parse("\\[").into_output_errors(),
+        (Some('['), vec![])
+    );
+}
+
 fn text<'a>() -> impl Parser<'a, &'a str, String, E<'a>> {
-    escape()
-        .or(any().and_is(one_of(CONTROL_CHARACTERS).not()))
+    none_of(CONTROL_CHARACTERS)
+        .and_is(whitespace().at_least(1).not())
+        .and_is(escape().not())
+        .or(escape())
         .repeated()
         .at_least(1)
         // TODO: it's a little disgusting that i have to allocate this
         // but i can't just take from the original string
         .collect::<String>()
 }
+
+#[cfg(test)]
+#[test]
+fn escape_test() {}
 
 fn cat_or_els<'a>() -> impl Parser<'a, &'a str, Vec<CatOrEl>, E<'a>> {
     text()
@@ -144,14 +172,14 @@ pub fn pattern_element<'src>(
         repeat_wild,
         repeat_n,
         null_category,
-        category,
         cat_ref,
+        category,
         simple,
         text().map(PatternElement::Text),
     ))
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Pattern {
     elements: Vec<PatternElement>,
 }
@@ -165,7 +193,7 @@ pub fn pattern<'src>() -> impl Parser<'src, &'src str, Pattern, E<'src>> {
             .boxed() // required to avoid an evil type error
     })
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Target {
     pattern: Pattern,
     positions: Vec<isize>,
@@ -193,7 +221,7 @@ pub fn target<'src>() -> impl Parser<'src, &'src str, Target, E<'src>> {
         .then(position().or_not().map(|p| p.unwrap_or_default()))
         .map(|(pattern, positions)| Target { pattern, positions })
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct Change {
     pattern: Pattern,
 }
@@ -203,7 +231,7 @@ fn change<'src>() -> impl Parser<'src, &'src str, Change, E<'src>> {
 }
 
 /// Groups together environments that are connected via `&`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct EnvironmentGroup {
     patterns: Vec<Pattern>,
 }
@@ -214,7 +242,7 @@ fn environment_group<'src>() -> impl Parser<'src, &'src str, EnvironmentGroup, E
         .collect::<Vec<_>>()
         .map(|patterns| EnvironmentGroup { patterns })
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Predicate {
     change: Vec<Change>,
     environment: Vec<EnvironmentGroup>,
@@ -243,6 +271,7 @@ pub fn predicate<'src>() -> impl Parser<'src, &'src str, Predicate, E<'src>> {
         .ignore_then(environments())
         .or_not()
         .map(|e| e.unwrap_or_default());
+
     just('>')
         .ignore_then(inline_whitespace())
         .ignore_then(changes)
@@ -256,8 +285,8 @@ pub fn predicate<'src>() -> impl Parser<'src, &'src str, Predicate, E<'src>> {
             exception,
         })
 }
-#[derive(Debug, Clone)]
-struct Rule {
+#[derive(Debug, Clone, Default)]
+pub struct Rule {
     target: Target,
     predicates: Vec<Predicate>,
 }
@@ -268,18 +297,19 @@ fn rule<'src>() -> impl Parser<'src, &'src str, Rule, E<'src>> {
         .then(
             predicate()
                 .separated_by(inline_whitespace().or_not())
+                .at_least(1)
                 .collect::<Vec<_>>(),
         )
         .map(|(target, predicates)| Rule { target, predicates })
 }
 
 #[derive(Debug, Clone)]
-enum ASTElement {
+pub enum ASTElement {
     Rule(Rule),
     CatEdit(CategoryEdit),
 }
 
-fn ast_element<'src>() -> impl Parser<'src, &'src str, ASTElement, E<'src>> {
+pub fn ast_element<'src>() -> impl Parser<'src, &'src str, ASTElement, E<'src>> {
     choice((
         rule().map(ASTElement::Rule),
         cat_edit().map(ASTElement::CatEdit),
@@ -294,12 +324,13 @@ pub struct AST {
 pub fn ast<'src>() -> impl Parser<'src, &'src str, AST, E<'src>> {
     let comment = just("//")
         .then(any().and_is(newline().not()).repeated())
+        .then(newline())
         .padded();
     ast_element()
         .map_with_span(|e, span| (e, span))
         .padded_by(comment.repeated())
-        .padded()
-        .separated_by(newline())
+        .padded_by(inline_whitespace())
+        .separated_by(newline().repeated().at_least(1))
         .collect::<Vec<_>>()
         .recover_with(skip_then_retry_until(any().ignored(), end()))
         .map(|elements| AST { elements })
