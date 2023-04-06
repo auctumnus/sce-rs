@@ -5,25 +5,13 @@ use chumsky::{
 use std::str::FromStr;
 use strum::EnumString;
 
-//use crate::common::Wildcard;
-
-#[derive(Clone, Debug, EnumString)]
-pub enum Wildcard {
-    #[strum(serialize = "*?")]
-    NonGreedy,
-    #[strum(serialize = "*")]
-    Greedy,
-    #[strum(serialize = "**?")]
-    NonGreedyExtended,
-    #[strum(serialize = "**")]
-    GreedyExtended,
-}
+use crate::common::Wildcard;
 
 const CONTROL_CHARACTERS: &str = "[]{}<>()@!%^_, *?\\+-^/=";
 
 type E<'a> = extra::Err<Rich<'a, char, SimpleSpan<usize>>>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CatOrEl {
     Cat(String),
     El(String),
@@ -70,7 +58,23 @@ fn text<'a>() -> impl Parser<'a, &'a str, String, E<'a>> {
 
 #[cfg(test)]
 #[test]
-fn escape_test() {}
+fn text_test() {
+    let passing_cases = [("abc", "abc"), ("\\[a\\]", "[a]")];
+
+    passing_cases.into_iter().for_each(|(input, expected)| {
+        let (parsed, errs) = text().parse(input).into_output_errors();
+        assert_eq!(parsed, Some(String::from(expected)));
+        assert!(errs.len() == 0);
+    });
+
+    let failing_cases = ["\\", "\\n", "a "];
+
+    failing_cases.into_iter().for_each(|input| {
+        let (parsed, errs) = text().parse(input).into_output_errors();
+        assert!(parsed.is_none());
+        assert!(errs.len() > 0);
+    });
+}
 
 fn cat_or_els<'a>() -> impl Parser<'a, &'a str, Vec<CatOrEl>, E<'a>> {
     text()
@@ -80,6 +84,20 @@ fn cat_or_els<'a>() -> impl Parser<'a, &'a str, Vec<CatOrEl>, E<'a>> {
         .separated_by(just(',').then_ignore(inline_whitespace()))
         .at_least(1)
         .collect::<Vec<_>>()
+}
+
+#[cfg(test)]
+#[test]
+fn cat_or_els_test() {
+    use CatOrEl::*;
+    assert_eq!(
+        cat_or_els().parse("a,b,[c]").into_output(),
+        Some(vec![
+            El(String::from("a")),
+            El(String::from("b")),
+            Cat(String::from("c"))
+        ])
+    );
 }
 
 pub fn cat_edit<'a>() -> impl Parser<'a, &'a str, CategoryEdit, E<'a>> {
@@ -101,7 +119,7 @@ pub fn cat_edit<'a>() -> impl Parser<'a, &'a str, CategoryEdit, E<'a>> {
         })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PatternElement {
     Text(String),
     Optional(Pattern),
@@ -179,7 +197,7 @@ pub fn pattern_element<'src>(
     ))
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Pattern {
     elements: Vec<PatternElement>,
 }
@@ -193,34 +211,24 @@ pub fn pattern<'src>() -> impl Parser<'src, &'src str, Pattern, E<'src>> {
             .boxed() // required to avoid an evil type error
     })
 }
-#[derive(Debug, Clone, Default)]
-pub struct Target {
-    pattern: Pattern,
-    positions: Vec<isize>,
+
+#[cfg(test)]
+#[test]
+fn pattern_test() {
+    use self::Wildcard::*;
+    use PatternElement::*;
+
+    let cases = [
+        ("a", vec![Text(String::from("a"))]),
+        ("*", vec![Wildcard(Greedy)]),
+    ];
+
+    for (input, expected) in cases {
+        let actual = pattern().parse(input).into_output().map(|p| p.elements);
+        assert_eq!(actual, Some(expected));
+    }
 }
 
-fn position_num<'src>() -> impl Parser<'src, &'src str, isize, E<'src>> {
-    just('-')
-        .or_not()
-        .then(digits(10))
-        .map_slice(|s| isize::from_str_radix(s, 10))
-        .try_map(|t, span| t.map_err(|e| Rich::custom(span, format!("bad number: {e}"))))
-}
-
-fn position<'src>() -> impl Parser<'src, &'src str, Vec<isize>, E<'src>> {
-    just('@').ignore_then(
-        position_num()
-            .separated_by(just('|'))
-            .at_least(1)
-            .collect::<Vec<_>>(),
-    )
-}
-
-pub fn target<'src>() -> impl Parser<'src, &'src str, Target, E<'src>> {
-    pattern()
-        .then(position().or_not().map(|p| p.unwrap_or_default()))
-        .map(|(pattern, positions)| Target { pattern, positions })
-}
 #[derive(Debug, Clone, Default)]
 struct Change {
     pattern: Pattern,
@@ -285,6 +293,13 @@ pub fn predicate<'src>() -> impl Parser<'src, &'src str, Predicate, E<'src>> {
             exception,
         })
 }
+
+#[derive(Debug, Clone, Default)]
+pub struct Target {
+    pattern: Pattern,
+    positions: Vec<isize>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Rule {
     target: Target,
@@ -292,7 +307,24 @@ pub struct Rule {
 }
 
 fn rule<'src>() -> impl Parser<'src, &'src str, Rule, E<'src>> {
-    target()
+    let position_num = just('-')
+        .or_not()
+        .then(digits(10))
+        .map_slice(|s| isize::from_str_radix(s, 10))
+        .try_map(|t, span| t.map_err(|e| Rich::custom(span, format!("bad number: {e}"))));
+
+    let position = just('@').ignore_then(
+        position_num
+            .separated_by(just('|'))
+            .at_least(1)
+            .collect::<Vec<_>>(),
+    );
+
+    let target = pattern()
+        .then(position.or_not().map(|p| p.unwrap_or_default()))
+        .map(|(pattern, positions)| Target { pattern, positions });
+
+    target
         .then_ignore(inline_whitespace())
         .then(
             predicate()

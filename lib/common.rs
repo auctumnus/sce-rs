@@ -1,6 +1,6 @@
 use strum::EnumString;
 
-#[derive(Clone, Debug, EnumString)]
+#[derive(Clone, Debug, EnumString, PartialEq)]
 pub enum Wildcard {
     #[strum(serialize = "*?")]
     NonGreedy,
