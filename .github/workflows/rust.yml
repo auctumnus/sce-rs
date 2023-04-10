@@ -1,0 +1,28 @@
+name: Rust
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install preresiquites
+        run: cargo install grcov
+
+      - uses: actions/checkout@v3
+      - name: Test
+        run: RUSTFLAGS="-Cinstrument-coverage" LLVM_PROFILE_FILE="ci-%p-%m.profraw" cargo test
+
+      - name: Collect coverage
+        run: grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o ./target/debug/coverage/
+
+      - name: Get coverage summary
+        run:
+          - lcov --extract target/debug/coverage/lcov src/**/* lib/**/* > lcov.info

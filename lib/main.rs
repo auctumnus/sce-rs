@@ -1,8 +1,11 @@
+#![feature(test)]
+
 use ariadne::{sources, Label, Report};
 use chumsky::prelude::*;
 
 mod common;
 mod parse;
+mod word;
 
 pub fn parse(source: &str) {
     let (ast, errs) = parse::ast().parse(source).into_output_errors();

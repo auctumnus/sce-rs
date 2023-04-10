@@ -367,3 +367,61 @@ pub fn ast<'src>() -> impl Parser<'src, &'src str, AST, E<'src>> {
         .recover_with(skip_then_retry_until(any().ignored(), end()))
         .map(|elements| AST { elements })
 }
+
+extern crate test;
+use test::Bencher;
+
+#[cfg(test)]
+#[bench]
+fn ast_bench(b: &mut Bencher) {
+    // saxonish sound changes
+    // https://conworkshop.com/view_language.php?l=sxs
+    // shoutout!
+    let input = r#"
+    N=m,n
+    T=p,t,k
+    D=b,d,g
+    F=f,þ,s,z,h
+    R=w,r,l,j
+    C=[N],[T],[D],[F],[R]
+    
+    V=i,u,ī,ū,e,ē,ê,ō,ô,a,ā,ą,į,ų,į̄,ǭ,ǫ̂
+    
+    // west germanic
+    i, u > e, o / _[C]{*}[a,ā,ą] ! _[n,j], _[C]{*}[n,j], a_
+    ē > æ: ! _#
+    a, o, u > æ, e, i / _[C]{*}[i,j] ! _i
+    u > o / _[C]{*}[a,ā,ą] ! _[n,j], _[C]{*}[n,j]
+    ō, ē, ǭ > u, a, ā / _#
+    ai, au > æ:, ā
+    - z / _#
+    a,ą > ă / _#
+    zw,dw > ww
+    z > r
+    j > "j / [C]_ ! r_
+    
+    // ingvaeonic
+    a[N], e[N], i[N], ō[N], u[N], ī[N], ū[N], ē[N], ā[N] > ą, ę, į, ǭ, ų, į̄, ų̄, ę̄, ą̄ / _[F]
+    a > æ ! _[N], _[C]{*}[a,ā,ą,ą̄,ō,ǭ,u,ų,ų̄]
+    
+    // ortho convert
+    ī, ē, ā, ō, ū > i:, e:, ɑ:, o:, u:
+    ǭ, į̄, ų̄, ę̄, ą̄ > ǫ:, į:, ų:, ę:, ą:
+    V += æ, ą, ę, į, ǫ, ų
+    
+    // old saxonish
+    m,b,d,g > w̃,w,ð,ɣ / [V](:)_[[V],ă]
+    p, t, k > f, þ, h / [V](:)_[[V],ă]
+    - ă
+    C += w̃,ð,ɣ
+    [N][T],[N][D] > [N][D], [N][N]
+    sk > sʲ
+    + ʲ / [#,[C]]_[i,j,e,į,ę,æ], [i,į](:)[C]_[#,[C]]
+    + ʲ / [C]_[C]ʲ, ʲ[C]_ ! ʲ_
+    ɣʲ > ʝ
+    a, e, o > ɔ, i, u / _[N]
+    ą, ę, ǫ > ɔ, i, u
+    ą, ę, į, ǫ, ų > a, e, i, o, u
+"#;
+    b.iter(|| ast().parse(input).into_output_errors())
+}

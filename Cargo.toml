@@ -16,4 +16,6 @@ path = "lib/main.rs"
 [dependencies]
 ariadne = "0.2.0"
 chumsky = "1.0.0-alpha.3"
+lazy_static = "1.4.0"
+regex = "1.7.3"
 strum = { version = "0.24.1", features = ["strum_macros", "derive"] }
