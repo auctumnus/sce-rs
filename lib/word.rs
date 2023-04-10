@@ -111,107 +111,111 @@ pub fn parse(input: &String, mut graphs: Vec<String>, separator: String) -> Word
 }
 
 #[cfg(test)]
-#[test]
-fn word_parse_test_basic() {
-    let input = String::from("abc");
-    let graphs = vec![];
-    let separator = String::from("'");
+mod word_tests {
+    use super::parse;
 
-    let word = parse(&input, graphs, separator);
+    #[test]
+    fn basic() {
+        let input = String::from("abc");
+        let graphs = vec![];
+        let separator = String::from("'");
 
-    assert_eq!(
-        word.phones,
-        vec![
-            String::from("#"),
-            String::from("a"),
-            String::from("b"),
-            String::from("c"),
-            String::from("#")
-        ]
-    );
-}
+        let word = parse(&input, graphs, separator);
 
-#[cfg(test)]
-#[test]
-fn word_parse_test_unnecessary_separator() {
-    let input = String::from("a'bc");
-    let graphs = vec![];
-    let separator = String::from("'");
+        assert_eq!(
+            word.phones,
+            vec![
+                String::from("#"),
+                String::from("a"),
+                String::from("b"),
+                String::from("c"),
+                String::from("#")
+            ]
+        );
+    }
 
-    let word = parse(&input, graphs, separator);
+    #[cfg(test)]
+    #[test]
+    fn unnecessary_separator() {
+        let input = String::from("a'bc");
+        let graphs = vec![];
+        let separator = String::from("'");
 
-    assert_eq!(
-        word.phones,
-        vec![
-            String::from("#"),
-            String::from("a"),
-            String::from("b"),
-            String::from("c"),
-            String::from("#")
-        ]
-    );
+        let word = parse(&input, graphs, separator);
 
-    assert_eq!(word.to_string(), "abc".to_string())
-}
+        assert_eq!(
+            word.phones,
+            vec![
+                String::from("#"),
+                String::from("a"),
+                String::from("b"),
+                String::from("c"),
+                String::from("#")
+            ]
+        );
 
-#[cfg(test)]
-#[test]
-fn word_parse_test_polygraphs() {
-    let input = "atshu".into();
-    let graphs = vec!["sh".into(), "ts".into(), "tsh".into()];
-    let separator = String::from("'");
+        assert_eq!(word.to_string(), "abc".to_string())
+    }
 
-    let word = parse(&input, graphs, separator);
+    #[cfg(test)]
+    #[test]
+    fn polygraphs() {
+        let input = "atshu".into();
+        let graphs = vec!["sh".into(), "ts".into(), "tsh".into()];
+        let separator = String::from("'");
 
-    assert_eq!(
-        word.phones,
-        vec![
-            String::from("#"),
-            String::from("a"),
-            String::from("tsh"),
-            String::from("u"),
-            String::from("#")
-        ]
-    );
+        let word = parse(&input, graphs, separator);
 
-    assert_eq!(word.to_string(), input);
+        assert_eq!(
+            word.phones,
+            vec![
+                String::from("#"),
+                String::from("a"),
+                String::from("tsh"),
+                String::from("u"),
+                String::from("#")
+            ]
+        );
 
-    let input = "ats'hu".into();
-    let graphs = vec!["sh".into(), "ts".into(), "tsh".into()];
-    let separator = String::from("'");
+        assert_eq!(word.to_string(), input);
 
-    let word = parse(&input, graphs, separator);
+        let input = "ats'hu".into();
+        let graphs = vec!["sh".into(), "ts".into(), "tsh".into()];
+        let separator = String::from("'");
 
-    assert_eq!(
-        word.phones,
-        vec![
-            String::from("#"),
-            String::from("a"),
-            String::from("ts"),
-            String::from("h"),
-            String::from("u"),
-            String::from("#")
-        ]
-    );
+        let word = parse(&input, graphs, separator);
 
-    assert_eq!(word.to_string(), input);
-}
+        assert_eq!(
+            word.phones,
+            vec![
+                String::from("#"),
+                String::from("a"),
+                String::from("ts"),
+                String::from("h"),
+                String::from("u"),
+                String::from("#")
+            ]
+        );
 
-#[cfg(test)]
-#[test]
-fn word_parse_test_internal_whitespace() {
-    let input = "a  b".into();
+        assert_eq!(word.to_string(), input);
+    }
 
-    let word = parse(&input, vec![], String::from("'"));
+    #[cfg(test)]
+    #[test]
+    fn internal_whitespace() {
+        let input = "a  b".into();
 
-    assert_eq!(
-        word.phones,
-        vec![
-            String::from("#"),
-            String::from("a"),
-            String::from("#"),
-            String::from("b"),
-            String::from("#")
-        ]
-    );
+        let word = parse(&input, vec![], String::from("'"));
+
+        assert_eq!(
+            word.phones,
+            vec![
+                String::from("#"),
+                String::from("a"),
+                String::from("#"),
+                String::from("b"),
+                String::from("#")
+            ]
+        );
+    }
 }

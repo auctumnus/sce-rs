@@ -34,14 +34,17 @@ pub struct CategoryEdit {
 fn escape<'a>() -> impl Parser<'a, &'a str, char, E<'a>> {
     just('\\').ignore_then(one_of(CONTROL_CHARACTERS))
 }
-
 #[cfg(test)]
-#[test]
-fn escape_test() {
-    assert_eq!(
-        escape().parse("\\[").into_output_errors(),
-        (Some('['), vec![])
-    );
+mod escape_tests {
+    use chumsky::Parser;
+
+    #[test]
+    fn basic() {
+        assert_eq!(
+            crate::parse::escape().parse("\\[").into_output_errors(),
+            (Some('['), vec![])
+        );
+    }
 }
 
 fn text<'a>() -> impl Parser<'a, &'a str, String, E<'a>> {
@@ -57,23 +60,26 @@ fn text<'a>() -> impl Parser<'a, &'a str, String, E<'a>> {
 }
 
 #[cfg(test)]
-#[test]
-fn text_test() {
-    let passing_cases = [("abc", "abc"), ("\\[a\\]", "[a]")];
+mod text_tests {
+    use chumsky::Parser;
+    #[test]
+    fn basic() {
+        let passing_cases = [("abc", "abc"), ("\\[a\\]", "[a]")];
 
-    passing_cases.into_iter().for_each(|(input, expected)| {
-        let (parsed, errs) = text().parse(input).into_output_errors();
-        assert_eq!(parsed, Some(String::from(expected)));
-        assert!(errs.len() == 0);
-    });
+        passing_cases.into_iter().for_each(|(input, expected)| {
+            let (parsed, errs) = crate::parse::text().parse(input).into_output_errors();
+            assert_eq!(parsed, Some(String::from(expected)));
+            assert!(errs.len() == 0);
+        });
 
-    let failing_cases = ["\\", "\\n", "a "];
+        let failing_cases = ["\\", "\\n", "a "];
 
-    failing_cases.into_iter().for_each(|input| {
-        let (parsed, errs) = text().parse(input).into_output_errors();
-        assert!(parsed.is_none());
-        assert!(errs.len() > 0);
-    });
+        failing_cases.into_iter().for_each(|input| {
+            let (parsed, errs) = crate::parse::text().parse(input).into_output_errors();
+            assert!(parsed.is_none());
+            assert!(errs.len() > 0);
+        });
+    }
 }
 
 fn cat_or_els<'a>() -> impl Parser<'a, &'a str, Vec<CatOrEl>, E<'a>> {
@@ -87,17 +93,20 @@ fn cat_or_els<'a>() -> impl Parser<'a, &'a str, Vec<CatOrEl>, E<'a>> {
 }
 
 #[cfg(test)]
-#[test]
-fn cat_or_els_test() {
-    use CatOrEl::*;
-    assert_eq!(
-        cat_or_els().parse("a,b,[c]").into_output(),
-        Some(vec![
-            El(String::from("a")),
-            El(String::from("b")),
-            Cat(String::from("c"))
-        ])
-    );
+mod cat_or_els_tests {
+    use chumsky::Parser;
+    #[test]
+    fn cat_or_els_test() {
+        use super::CatOrEl::*;
+        assert_eq!(
+            super::cat_or_els().parse("a,b,[c]").into_output(),
+            Some(vec![
+                El(String::from("a")),
+                El(String::from("b")),
+                Cat(String::from("c"))
+            ])
+        );
+    }
 }
 
 pub fn cat_edit<'a>() -> impl Parser<'a, &'a str, CategoryEdit, E<'a>> {
@@ -213,19 +222,25 @@ pub fn pattern<'src>() -> impl Parser<'src, &'src str, Pattern, E<'src>> {
 }
 
 #[cfg(test)]
-#[test]
-fn pattern_test() {
-    use self::Wildcard::*;
-    use PatternElement::*;
+mod pattern_tests {
+    use chumsky::Parser;
+    #[test]
+    fn basic() {
+        use super::PatternElement::*;
+        use super::Wildcard::*;
 
-    let cases = [
-        ("a", vec![Text(String::from("a"))]),
-        ("*", vec![Wildcard(Greedy)]),
-    ];
+        let cases = [
+            ("a", vec![Text(String::from("a"))]),
+            ("*", vec![Wildcard(Greedy)]),
+        ];
 
-    for (input, expected) in cases {
-        let actual = pattern().parse(input).into_output().map(|p| p.elements);
-        assert_eq!(actual, Some(expected));
+        for (input, expected) in cases {
+            let actual = super::pattern()
+                .parse(input)
+                .into_output()
+                .map(|p| p.elements);
+            assert_eq!(actual, Some(expected));
+        }
     }
 }
 
@@ -286,7 +301,7 @@ pub fn predicate<'src>() -> impl Parser<'src, &'src str, Predicate, E<'src>> {
         .then_ignore(inline_whitespace())
         .then(environment_clause)
         .then_ignore(inline_whitespace())
-        .then(exception_clause) // exceptions
+        .then(exception_clause)
         .map(|((change, environment), exception)| Predicate {
             change,
             environment,
@@ -352,6 +367,21 @@ pub fn ast_element<'src>() -> impl Parser<'src, &'src str, ASTElement, E<'src>> 
 pub struct AST {
     elements: Vec<(ASTElement, SimpleSpan<usize>)>,
 }
+#[test]
+fn pattern_test() {
+    use self::Wildcard::*;
+    use PatternElement::*;
+
+    let cases = [
+        ("a", vec![Text(String::from("a"))]),
+        ("*", vec![Wildcard(Greedy)]),
+    ];
+
+    for (input, expected) in cases {
+        let actual = pattern().parse(input).into_output().map(|p| p.elements);
+        assert_eq!(actual, Some(expected));
+    }
+}
 
 pub fn ast<'src>() -> impl Parser<'src, &'src str, AST, E<'src>> {
     let comment = just("//")
@@ -368,16 +398,18 @@ pub fn ast<'src>() -> impl Parser<'src, &'src str, AST, E<'src>> {
         .map(|elements| AST { elements })
 }
 
-extern crate test;
-use test::Bencher;
-
 #[cfg(test)]
-#[bench]
-fn ast_bench(b: &mut Bencher) {
-    // saxonish sound changes
-    // https://conworkshop.com/view_language.php?l=sxs
-    // shoutout!
-    let input = r#"
+mod bench {
+    extern crate test;
+    use chumsky::Parser;
+    use test::Bencher;
+
+    #[bench]
+    fn ast_bench(b: &mut Bencher) {
+        // saxonish sound changes
+        // https://conworkshop.com/view_language.php?l=sxs
+        // shoutout!
+        let input = r#"
     N=m,n
     T=p,t,k
     D=b,d,g
@@ -423,5 +455,6 @@ fn ast_bench(b: &mut Bencher) {
     ą, ę, ǫ > ɔ, i, u
     ą, ę, į, ǫ, ų > a, e, i, o, u
 "#;
-    b.iter(|| ast().parse(input).into_output_errors())
+        b.iter(|| crate::parse::ast().parse(input).into_output_errors())
+    }
 }
