@@ -3,7 +3,6 @@ use chumsky::{
     text::{digits, inline_whitespace, newline, whitespace},
 };
 use std::str::FromStr;
-use strum::EnumString;
 
 use crate::common::Wildcard;
 
@@ -26,9 +25,9 @@ pub enum CategoryEditKind {
 
 #[derive(Clone, Debug)]
 pub struct CategoryEdit {
-    target: String,
-    elements: Vec<CatOrEl>,
-    kind: CategoryEditKind,
+    pub target: String,
+    pub elements: Vec<CatOrEl>,
+    pub kind: CategoryEditKind,
 }
 
 fn escape<'a>() -> impl Parser<'a, &'a str, char, E<'a>> {
@@ -66,19 +65,19 @@ mod text_tests {
     fn basic() {
         let passing_cases = [("abc", "abc"), ("\\[a\\]", "[a]")];
 
-        passing_cases.into_iter().for_each(|(input, expected)| {
+        for (input, expected) in passing_cases {
             let (parsed, errs) = crate::parse::text().parse(input).into_output_errors();
             assert_eq!(parsed, Some(String::from(expected)));
-            assert!(errs.len() == 0);
-        });
+            assert!(errs.is_empty());
+        }
 
         let failing_cases = ["\\", "\\n", "a "];
 
-        failing_cases.into_iter().for_each(|input| {
+        for input in failing_cases {
             let (parsed, errs) = crate::parse::text().parse(input).into_output_errors();
             assert!(parsed.is_none());
-            assert!(errs.len() > 0);
-        });
+            assert!(!errs.is_empty());
+        }
     }
 }
 
@@ -123,8 +122,8 @@ pub fn cat_edit<'a>() -> impl Parser<'a, &'a str, CategoryEdit, E<'a>> {
         .then(cat_or_els())
         .map(|((target, kind), elements)| CategoryEdit {
             target,
-            kind,
             elements,
+            kind,
         })
 }
 
@@ -165,9 +164,9 @@ pub fn pattern_element<'src>(
 
     let repeat_n = digits(10)
         .slice()
-        .try_map(|t, span| {
-            usize::from_str_radix(t, 10)
-                .map_err(|e| Rich::custom(span, "couldn't parse repeat int"))
+        .try_map(|t: &str, span| {
+            t.parse::<usize>()
+                .map_err(|_| Rich::custom(span, "couldn't parse repeat int"))
         })
         .delimited_by(just('{'), just('}'))
         .map(PatternElement::RepeatN);
@@ -208,7 +207,7 @@ pub fn pattern_element<'src>(
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Pattern {
-    elements: Vec<PatternElement>,
+    pub elements: Vec<PatternElement>,
 }
 
 pub fn pattern<'src>() -> impl Parser<'src, &'src str, Pattern, E<'src>> {
@@ -278,30 +277,34 @@ fn environments<'src>() -> impl Parser<'src, &'src str, Vec<EnvironmentGroup>, E
         .collect::<Vec<_>>()
 }
 
+fn environment_clause<'src>() -> impl Parser<'src, &'src str, Vec<EnvironmentGroup>, E<'src>> {
+    just('/')
+        .then(inline_whitespace())
+        .ignore_then(environments())
+        .or_not()
+        .map(|e| e.unwrap_or_default())
+}
+
+fn exception_clause<'src>() -> impl Parser<'src, &'src str, Vec<EnvironmentGroup>, E<'src>> {
+    just('!')
+        .then(inline_whitespace())
+        .ignore_then(environments())
+        .or_not()
+        .map(|e| e.unwrap_or_default())
+}
+
 pub fn predicate<'src>() -> impl Parser<'src, &'src str, Predicate, E<'src>> {
     let changes = change()
         .separated_by(just(',').then_ignore(inline_whitespace()))
         .collect::<Vec<_>>();
 
-    let environment_clause = just('/')
-        .then(inline_whitespace())
-        .ignore_then(environments())
-        .or_not()
-        .map(|e| e.unwrap_or_default());
-
-    let exception_clause = just('!')
-        .then(inline_whitespace())
-        .ignore_then(environments())
-        .or_not()
-        .map(|e| e.unwrap_or_default());
-
     just('>')
         .ignore_then(inline_whitespace())
         .ignore_then(changes)
         .then_ignore(inline_whitespace())
-        .then(environment_clause)
+        .then(environment_clause())
         .then_ignore(inline_whitespace())
-        .then(exception_clause)
+        .then(exception_clause())
         .map(|((change, environment), exception)| Predicate {
             change,
             environment,
@@ -321,11 +324,18 @@ pub struct Rule {
     predicates: Vec<Predicate>,
 }
 
-fn rule<'src>() -> impl Parser<'src, &'src str, Rule, E<'src>> {
+fn predicates<'src>() -> impl Parser<'src, &'src str, Vec<Predicate>, E<'src>> {
+    predicate()
+        .separated_by(inline_whitespace().or_not())
+        .at_least(1)
+        .collect::<Vec<_>>()
+}
+
+fn target<'src>() -> impl Parser<'src, &'src str, Target, E<'src>> {
     let position_num = just('-')
         .or_not()
         .then(digits(10))
-        .map_slice(|s| isize::from_str_radix(s, 10))
+        .map_slice(str::parse)
         .try_map(|t, span| t.map_err(|e| Rich::custom(span, format!("bad number: {e}"))));
 
     let position = just('@').ignore_then(
@@ -335,19 +345,69 @@ fn rule<'src>() -> impl Parser<'src, &'src str, Rule, E<'src>> {
             .collect::<Vec<_>>(),
     );
 
-    let target = pattern()
-        .then(position.or_not().map(|p| p.unwrap_or_default()))
-        .map(|(pattern, positions)| Target { pattern, positions });
+    pattern()
+        .then(position.or_not().map(Option::unwrap_or_default))
+        .map(|(pattern, positions)| Target { pattern, positions })
+}
 
-    target
+fn rule<'src>() -> impl Parser<'src, &'src str, Rule, E<'src>> {
+    let rule = target()
         .then_ignore(inline_whitespace())
-        .then(
-            predicate()
-                .separated_by(inline_whitespace().or_not())
-                .at_least(1)
-                .collect::<Vec<_>>(),
-        )
-        .map(|(target, predicates)| Rule { target, predicates })
+        .then(predicates())
+        .map(|(target, predicates)| Rule { target, predicates });
+
+    // yes, epenthesis can just have an arbitrary predicate. no, i have no clue why
+    // see: application of `+ a > b / c` to words `ac`, `ab` results in `aaaca`, `aaaba`
+    let epenthesis = just('+')
+        .ignore_then(target().padded_by(inline_whitespace()))
+        .then(predicates())
+        .map(|(target, mut predicates)| {
+            // set the target to null, and move the target to the change
+            // such that `+ a / _b` == `[] > a / _b`
+
+            let null_target = Target {
+                pattern: Pattern {
+                    elements: vec![PatternElement::Category(vec![])],
+                },
+                positions: target.positions,
+            };
+
+            predicates[0].change = vec![Change {
+                pattern: target.pattern,
+            }];
+
+            Rule {
+                target: null_target,
+                predicates,
+            }
+        });
+
+    let deletion = just('-')
+        .ignore_then(target().padded_by(inline_whitespace()))
+        .then(predicates())
+        .map(|(target, predicates)| {
+            // set change to null such that `- a / _b` == `a > [] / _b`
+
+            let predicates = predicates
+                .into_iter()
+                .map(|predicate| {
+                    let null_change = vec![Change {
+                        pattern: Pattern {
+                            elements: vec![PatternElement::Category(vec![])],
+                        },
+                    }];
+                    Predicate {
+                        change: null_change,
+                        environment: predicate.environment,
+                        exception: predicate.exception,
+                    }
+                })
+                .collect();
+
+            Rule { target, predicates }
+        });
+
+    choice((rule, epenthesis, deletion))
 }
 
 #[derive(Debug, Clone)]
@@ -363,9 +423,10 @@ pub fn ast_element<'src>() -> impl Parser<'src, &'src str, ASTElement, E<'src>> 
     ))
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]
 pub struct AST {
-    elements: Vec<(ASTElement, SimpleSpan<usize>)>,
+    pub elements: Vec<(ASTElement, SimpleSpan<usize>)>,
 }
 #[test]
 fn pattern_test() {
@@ -455,6 +516,6 @@ mod bench {
     ą, ę, ǫ > ɔ, i, u
     ą, ę, į, ǫ, ų > a, e, i, o, u
 "#;
-        b.iter(|| crate::parse::ast().parse(input).into_output_errors())
+        b.iter(|| crate::parse::ast().parse(input).into_output_errors());
     }
 }
