@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install preresiquites
-        run: cargo install grcov
+      #- name: Install preresiquites
+      #  run: cargo install grcov
       - run: rustup update nightly && rustup default nightly
       - run: rustup component add llvm-tools-preview
 
@@ -22,8 +22,8 @@ jobs:
       - name: Test
         run: RUSTFLAGS="-Cinstrument-coverage" LLVM_PROFILE_FILE="ci-%p-%m.profraw" cargo +nightly test
 
-      - name: Collect coverage
-        run: grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o ./target/debug/coverage/
+      #- name: Collect coverage
+      #  run: grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o ./target/debug/coverage/
 
-      - name: Get coverage summary
-        run: lcov --extract target/debug/coverage/lcov src/**/* lib/**/* > lcov.info
+      #- name: Get coverage summary
+      #  run: lcov --extract target/debug/coverage/lcov src/**/* lib/**/* > lcov.info
