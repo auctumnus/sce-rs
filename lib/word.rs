@@ -1,29 +1,66 @@
 use std::fmt::Display;
 
-use lazy_static::lazy_static;
-use regex::Regex;
+use crate::parse::Pattern;
 
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Word {
-    phones: Vec<String>,
-    graphs: Vec<String>,
-    separator: String,
+    pub phones: Vec<String>,
+    pub graphs: Vec<String>,
+    pub separator: String,
+}
+
+impl Word {
+    /// Match a pattern to the phonemes of a word, starting from the given index.
+    ///
+    /// ## Returns
+    /// TODO
+    fn match_one(&self, pattern: &Pattern, start_index: usize) -> Option<()> {
+        use crate::parse::PatternElement::*;
+
+        let mut index = start_index;
+        let mut last_index = start_index;
+
+        // TODO: could be more rusty
+
+        for element_index in 0..pattern.elements.len() {
+            let element = &pattern.elements[element_index];
+            let phone = &self.phones[element_index];
+            match element {
+                Text(text) => {
+                    // TODO: this is technically incorrect, since the parser
+                    // just swallows text without thinking about graphs
+                    // i think i need an intermediate step to convert these??
+                    if text != phone {
+                        return None;
+                    }
+                }
+                Ditto => {
+                    if element_index == 0 || phone != &self.phones[element_index - 1] {
+                        return None;
+                    }
+                }
+                _ => todo!(),
+            }
+        }
+
+        None
+    }
 }
 
 impl Display for Word {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if no_polygraphs(&self.graphs) {
-            let mut as_str = String::from("");
+            let mut as_str = String::new();
             for phone in &self.phones {
                 if phone == "#" {
                     as_str.push(' ');
                 } else {
-                    as_str.push_str(phone.as_str())
+                    as_str.push_str(phone.as_str());
                 }
             }
             write!(f, "{}", as_str.trim())
         } else {
-            let mut as_str = String::from("");
+            let mut as_str = String::new();
             for phone in &self.phones {
                 if phone == "#" {
                     as_str.push(' ');
@@ -49,7 +86,32 @@ fn no_polygraphs(graphs: &Vec<String>) -> bool {
             return false;
         }
     }
-    return true;
+    true
+}
+
+pub fn into_phones(input: String, graphs: &Vec<String>, separator: &String) -> Vec<String> {
+    let mut phones: Vec<String> = vec![];
+    let mut input = input;
+
+    while !input.is_empty() {
+        if input.starts_with(separator) {
+            input = input.split_once(separator).unwrap().1.to_string();
+        }
+
+        let graph = graphs.iter().find(|g| input.starts_with(g.as_str()));
+
+        if let Some(graph) = graph {
+            let len = graph.len();
+            phones.push(graph.to_string());
+            input = input[len..].to_string();
+        } else {
+            let first = input.split_at(1).0;
+            phones.push(first.to_string());
+            input = input[1..].to_string();
+        }
+    }
+
+    phones
 }
 
 /// Parses an input string into a word.
@@ -63,14 +125,14 @@ pub fn parse(input: &String, mut graphs: Vec<String>, separator: String) -> Word
     let input = input.split_whitespace().collect::<Vec<_>>().join("#");
     let input = format!("#{input}#");
 
-    graphs.sort_by_cached_key(|g| g.len());
+    graphs.sort_by_cached_key(String::len);
     graphs.reverse();
 
     if no_polygraphs(&graphs) {
         let phones = input
             .split("")
-            .filter(|s| s.len() != 0 && s != &separator.as_str())
-            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty() && s != &separator.as_str())
+            .map(ToString::to_string)
             .collect();
         return Word {
             phones,
@@ -79,29 +141,7 @@ pub fn parse(input: &String, mut graphs: Vec<String>, separator: String) -> Word
         };
     }
 
-    let mut phones: Vec<String> = vec![];
-    let mut input = input;
-
-    while input.len() > 0 {
-        if input.starts_with(&separator) {
-            input = input.split_once(&separator).unwrap().1.to_string();
-        }
-
-        let graph = graphs
-            .iter()
-            .filter(|g| input.starts_with(g.as_str()))
-            .next();
-
-        if let Some(graph) = graph {
-            let len = graph.len();
-            phones.push(graph.to_string());
-            input = input[len..].to_string();
-        } else {
-            let first = input.split_at(1).0;
-            phones.push(first.to_string());
-            input = input[1..].to_string();
-        }
-    }
+    let phones = into_phones(input, &graphs, &separator);
 
     Word {
         phones,
@@ -154,7 +194,7 @@ mod word_tests {
             ]
         );
 
-        assert_eq!(word.to_string(), "abc".to_string())
+        assert_eq!(word.to_string(), "abc".to_string());
     }
 
     #[cfg(test)]
