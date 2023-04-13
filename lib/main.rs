@@ -1,21 +1,34 @@
+#![warn(clippy::pedantic)]
+#![allow(clippy::enum_glob_use)]
 #![feature(test)]
 
 use ariadne::{sources, Label, Report};
 use chumsky::prelude::*;
+use parse::AST;
 
-mod common;
-mod parse;
-mod word;
+pub mod apply;
+pub mod common;
+pub mod parse;
+pub mod word;
 
-pub fn parse(source: &str) {
+/// Parses source code into an SCE AST.
+///
+/// ## Panics
+/// Panics if it fails to make error reports.
+///
+/// ## Returns
+/// Either the AST or the errors encountered.
+///
+/// ## Errors
+/// Returns parse errors.
+pub fn parse(source: &str) -> Result<AST, Vec<Rich<char>>> {
     let (ast, errs) = parse::ast().parse(source).into_output_errors();
     if let Some(ast) = ast {
-        println!("ast: {ast:?}")
+        println!("ast: {ast:?}");
+        return Ok(ast);
     }
-    /*for err in errs {
-        println!("{err}")
-    }*/
-    errs.into_iter()
+    errs.clone()
+        .into_iter()
         .map(|e| e.map_token(|c| c.to_string()))
         .for_each(|e| {
             Report::build(
@@ -30,12 +43,8 @@ pub fn parse(source: &str) {
             )
             .finish()
             .print(sources([(String::from("src"), source)]))
-            .unwrap()
-        })
-    /*
-    let (tokens, errs) = tokenize::tokenize().parse(source).into_output_errors();
-    if let Some(tokens) = tokens {
-        println!("tokens: {tokens:?}")
-    }
-    println!("errs: {errs:?}")*/
+            .unwrap();
+        });
+
+    Err(errs)
 }
