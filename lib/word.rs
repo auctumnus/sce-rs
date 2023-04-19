@@ -1,6 +1,6 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Range, ops::RangeInclusive};
 
-use crate::parse::Pattern;
+use crate::parse::{Pattern, PatternElement};
 
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Word {
@@ -9,41 +9,137 @@ pub struct Word {
     pub separator: String,
 }
 
+/// A multiple-element match.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MultipleMatch {
+    /// The range of the match in the word.
+    pub range: Range<usize>,
+    /// The outer element that was matched.
+    pub element: PatternElement,
+    /// The inner matches.
+    pub matches: Vec<Match>,
+}
+
+/// A single-element match.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SingleMatch {
+    /// The range of the match in the word.
+    pub range: Range<usize>,
+    /// The element that was matched.
+    pub element: PatternElement,
+}
+
+/// Represents a match of a pattern to a word.
+/// A match can be a single element, or a multiple elements (in the case of
+/// optional sequences, or wildcards).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Match {
+    Multiple(MultipleMatch),
+    Single(SingleMatch),
+}
+
 impl Word {
     /// Match a pattern to the phonemes of a word, starting from the given index.
     ///
     /// ## Returns
-    /// TODO
-    fn match_one(&self, pattern: &Pattern, start_index: usize) -> Option<()> {
+    /// A vector of matches, or `None` if the pattern does not match.
+    #[allow(clippy::range_plus_one)] // whyyyy is RangeInclusive a different type
+    pub fn match_one(&self, pattern: &Pattern, start_index: usize) -> Option<Vec<Match>> {
         use crate::parse::PatternElement::*;
+
+        let mut matches = vec![];
 
         let mut index = start_index;
         let mut last_index = start_index;
 
+        // disgusting
+        let pattern = pattern
+            .elements
+            .iter()
+            .flat_map(|e| match e {
+                Text(t) => {
+                    let elements = into_phones(t.clone(), &self.graphs, &self.separator);
+                    elements.into_iter().map(Text).collect()
+                }
+                _ => vec![e.clone()],
+            })
+            .collect::<Vec<_>>();
+
+        println!("pattern: {pattern:?}");
+
         // TODO: could be more rusty
 
-        for element_index in 0..pattern.elements.len() {
-            let element = &pattern.elements[element_index];
-            let phone = &self.phones[element_index];
+        for (element_index, element) in pattern.into_iter().enumerate() {
+            let phone = &self.phones[index];
             match element {
-                Text(text) => {
-                    // TODO: this is technically incorrect, since the parser
-                    // just swallows text without thinking about graphs
-                    // i think i need an intermediate step to convert these??
-                    if text != phone {
+                Text(graph) => {
+                    println!("{graph:?} == {phone:?}");
+                    if &graph != phone {
                         return None;
                     }
+                    matches.push(Match::Single(SingleMatch {
+                        range: last_index..(index + 1),
+                        element: Text(graph),
+                    }));
                 }
                 Ditto => {
                     if element_index == 0 || phone != &self.phones[element_index - 1] {
                         return None;
                     }
+                    matches.push(Match::Single(SingleMatch {
+                        range: last_index..(index + 1),
+                        element,
+                    }));
                 }
                 _ => todo!(),
             }
+            index += 1;
+            last_index = index;
         }
 
-        None
+        Some(matches)
+    }
+}
+
+#[cfg(test)]
+mod match_tests {
+    use chumsky::Parser;
+
+    #[test]
+    fn text() {
+        let word = super::Word {
+            phones: vec![
+                String::from("#"),
+                String::from("a"),
+                String::from("b"),
+                String::from("c"),
+                String::from("#"),
+            ],
+            graphs: vec![],
+            separator: String::from("'"),
+        };
+
+        let pattern = crate::parse::pattern().parse("abc").into_output().unwrap();
+
+        let matches = word.match_one(&pattern, 1).unwrap();
+
+        assert_eq!(
+            matches,
+            vec![
+                super::Match::Single(super::SingleMatch {
+                    range: 1..2,
+                    element: crate::parse::PatternElement::Text(String::from("a")),
+                }),
+                super::Match::Single(super::SingleMatch {
+                    range: 2..3,
+                    element: crate::parse::PatternElement::Text(String::from("b")),
+                }),
+                super::Match::Single(super::SingleMatch {
+                    range: 3..4,
+                    element: crate::parse::PatternElement::Text(String::from("c")),
+                }),
+            ]
+        );
     }
 }
 

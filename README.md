@@ -31,6 +31,7 @@ We are also, thus, not error-compatible.
 [NVPLv7+]; however, the codebase that this is nominally a port of is [MIT]
 (along with the [newer codebase] and [its license]).
 
+[sce]: https://conworkshop.com/emma/sce/
 [the current python implementation]: https://github.com/KathTheDragon/Conlanger
 [py-docs]: http://www.dragonlinguistics.com/sce/doc.html
 [nvplv7+]: https://thufie.lain.haus/NPL.html
